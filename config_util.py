@@ -26,20 +26,20 @@ def get_config(algorithm, minigame):
 
     with open(config_dir.format('config', "{}.yaml".format('default')), "r") as f:
         try:
-            default_config = yaml.load(f)
+            default_config = yaml.safe_load(f)
         except yaml.YAMLError as exc:
             assert False, "default.yaml error: {}".format(exc)
 
     with open(config_dir2.format('config', 'envs', "{}.yaml".format('sc2_beta')), "r") as f:
         try:
-            config_dict = yaml.load(f)
+            config_dict = yaml.safe_load(f)
         except yaml.YAMLError as exc:
             assert False, "{}.yaml error: {}".format('sc2', exc)
         env_config = config_dict
 
     with open(config_dir2.format('config', 'algs', "{}.yaml".format(algorithm)), "r") as f:
         try:
-            config_dict2 = yaml.load(f)
+            config_dict2 = yaml.safe_load(f)
         except yaml.YAMLError as exc:
             assert False, "{}.yaml error: {}".format('sc2', exc)
         alg_config = config_dict2

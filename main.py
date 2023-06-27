@@ -27,10 +27,9 @@ if __name__ == '__main__':
     #algorithm = 'Role_Learning_Agent/rode'
    # algorithm = 'Role_Learning_Agent/rode_gat'
     #algorithm = 'Role_Learning_Agent/qmix_smac_latent'
-    # algorithm = 'RNN_AGENT/noisemix_smac'
-    # algorithm = 'RNN_AGENT/noisemix_smac'
     #algorithm = 'G2ANet_Agent/qmix_beta'
-    algorithm = 'RNN_AGENT/graphmix'
+    #algorithm = 'RNN_AGENT/graphmix'
+    algorithm = 'MAVEN/noisemix_smac'
     minigame = '2s3z'
 
     config = cu.config_copy(cu.get_config(algorithm, minigame))

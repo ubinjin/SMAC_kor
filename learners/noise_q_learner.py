@@ -7,7 +7,6 @@ import torch as th
 from torch.optim import RMSprop
 import numpy as np
 
-
 class NoiseQLearner:
     def __init__(self, mac, scheme, logger, args):
         self.args = args
@@ -49,6 +48,7 @@ class NoiseQLearner:
 
     def train(self, batch: EpisodeBatch, t_env: int, episode_num: int):
         # Get the relevant quantities
+        
         rewards = batch["reward"][:, :-1]
         actions = batch["actions"][:, :-1]
         terminated = batch["terminated"][:, :-1].float()
@@ -81,10 +81,11 @@ class NoiseQLearner:
         # Mask out unavailable actions
         target_mac_out[avail_actions[:, 1:] == 0] = -9999999  # From OG deepmarl
 
+        mac_out_clone = mac_out.clone()
         # Max over target Q-Values
         if self.args.double_q:
             # Get actions that maximise live Q (for double q-learning)
-            mac_out[avail_actions == 0] = -9999999
+            mac_out_clone[avail_actions == 0] = -9999999
             cur_max_actions = mac_out[:, 1:].max(dim=3, keepdim=True)[1]
             target_max_qvals = th.gather(target_mac_out, 3, cur_max_actions).squeeze(3)
         else:
@@ -96,7 +97,7 @@ class NoiseQLearner:
             target_max_qvals = self.target_mixer(target_max_qvals, batch["state"][:, 1:], noise)
 
         # Discriminator
-        mac_out[avail_actions == 0] = -9999999
+        mac_out_clone[avail_actions == 0] = -9999999
         q_softmax_actions = th.nn.functional.softmax(mac_out[:, :-1], dim=3)
 
         if self.args.hard_qs:
@@ -155,7 +156,7 @@ class NoiseQLearner:
         mask = mask.expand_as(td_error)
 
         # 0-out the targets that came from padded data
-        masked_td_error = td_error * mask
+        masked_td_error = td_error.clone() * mask.clone()
 
         # Normal L2 loss, take mean over actual data
         loss = (masked_td_error ** 2).sum() / mask.sum()
