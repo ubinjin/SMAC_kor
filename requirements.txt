@@ -46,4 +46,8 @@ whichcraft==0.5.2
 wrapt==1.10.11
 sklearn==0.0
 cloudpickle==1.6.0
+#torch              	1.9.1+cu111
+#torchaudio         0.9.1
+#torchvision        	0.10.1+cu111
+#python		3.6.2
 #git+https://github.com/oxwhirl/smac.git        V
