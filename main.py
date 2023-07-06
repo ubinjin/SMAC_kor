@@ -21,15 +21,19 @@ mini game 설정 가이드
 
 if __name__ == '__main__':
     logger = get_logger()
-    #algorithm = 'RNN_AGENT/qmix_beta'
+    #IQL
+    #algorithm = 'RNN_AGENT/iql_beta'
+    #VDN
+    algorithm = 'RNN_AGENT/vdn_beta'
+    #COMA
     #algorithm = 'RNN_AGENT/coma'
-    #algorithm = 'RNN_AGENT/offpg_smac'
-    #algorithm = 'Role_Learning_Agent/rode'
-   # algorithm = 'Role_Learning_Agent/rode_gat'
-    #algorithm = 'Role_Learning_Agent/qmix_smac_latent'
-    #algorithm = 'G2ANet_Agent/qmix_beta'
-    #algorithm = 'RNN_AGENT/graphmix'
-    algorithm = 'MAVEN/noisemix_smac'
+    #QMIX
+    #algorithm = 'RNN_AGENT/qmix_beta'
+    #QTRAN
+    #algorithm = 'RNN_AGENT/qtran_beta'
+    #MAVEN
+    #algorithm = 'MAVEN/noisemix_episode'
+    #algorithm = 'MAVEN/Adv_MAVEN'
     minigame = '2s3z'
 
     config = cu.config_copy(cu.get_config(algorithm, minigame))
@@ -41,7 +45,6 @@ if __name__ == '__main__':
     config['env_args']['seed'] = random_Seed
 
     is_offpg = config['off_pg']
-
     if is_offpg:
         offpg_run(config, logger, minigame)
     else:

@@ -59,7 +59,7 @@ def offpg_run(_config, _log, game_name):
     print("Exiting script")
 
     # Making sure framework really exits
-    os._exit(os.EX_OK)
+    os._exit(0)
 
 
 def evaluate_sequential(args, runner):

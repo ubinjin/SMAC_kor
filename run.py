@@ -36,10 +36,13 @@ def standard_run(_config, _log, game_name):
     # configure tensorboard logger
     unique_token = "{}__{}".format(args.name, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     args.unique_token = unique_token
+    print("if")
     if args.use_tensorboard:
         tb_logs_direc = os.path.join(dirname(dirname(abspath(__file__))), "results", "tb_logs/{}".format(game_name))
         tb_exp_direc = os.path.join(tb_logs_direc, "{}").format(unique_token)
         logger.setup_tb(tb_exp_direc)
+        print("tb_logs_direc: ",tb_logs_direc)
+        print("tb_exp_direc: ",tb_exp_direc)
 
     # Run and train
     run_sequential(args=args, logger=logger)
@@ -57,7 +60,7 @@ def standard_run(_config, _log, game_name):
     print("Exiting script")
 
     # Making sure framework really exits
-    os._exit(os.EX_OK)
+    os._exit(0)
 
 
 def evaluate_sequential(args, runner):

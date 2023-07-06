@@ -4,11 +4,12 @@ from components.episode_buffer import EpisodeBatch
 from multiprocessing import Pipe, Process
 import numpy as np
 import torch as th
+from modules.bandits.const_lr import Constant_Lr
+from modules.bandits.uniform import Uniform
+from modules.bandits.reinforce_hierarchial import EZ_agent as enza
+from modules.bandits.returns_bandit import ReturnsBandit as RBandit
 
-
-# Based (very) heavily on SubprocVecEnv from OpenAI Baselines
-# https://github.com/openai/baselines/blob/master/baselines/common/vec_env/subproc_vec_env.py
-class ParallelRunnerV3:
+class ParallelRunnerV4:
 
     def __init__(self, args, logger):
         self.args = args
@@ -18,7 +19,7 @@ class ParallelRunnerV3:
         # Make subprocesses for the envs
         self.parent_conns, self.worker_conns = zip(*[Pipe() for _ in range(self.batch_size)])
         env_fn = env_REGISTRY[self.args.env]
-        self.ps = [Process(target=env_worker, args=(worker_conn, CloudpickleWrapper(partial(env_fn, **self.args.env_args))))
+        self.ps = [Process(target=env_worker, args=(worker_conn, CloudpickleWrapper(partial(env_fn, env_args=self.args.env_args, args=self.args))))
                             for worker_conn in self.worker_conns]
 
         for p in self.ps:
@@ -40,6 +41,10 @@ class ParallelRunnerV3:
 
         self.log_train_stats_t = -100000
 
+    def cuda(self):
+        if self.args.noise_bandit:
+            self.noise_distrib.cuda()
+
     def setup(self, scheme, groups, preprocess, mac):
         self.new_batch = partial(EpisodeBatch, scheme, groups, self.batch_size, self.episode_limit + 1,
                                  preprocess=preprocess, device=self.args.device)
@@ -48,20 +53,31 @@ class ParallelRunnerV3:
         self.groups = groups
         self.preprocess = preprocess
 
+        # Setup the noise distribution sampler
+        # if self.args.noise_bandit:
+        #     if self.args.bandit_policy:
+        #         self.noise_distrib = enza(self.args, logger=self.logger)
+        #     else:
+        #         self.noise_distrib = RBandit(self.args, logger=self.logger)
+        # else:
+        #    self.noise_distrib = Uniform(self.args)
+        self.noise_distrib = enza(self.args, logger=self.logger)
+
+        self.noise_returns = {}
+        self.noise_test_won = {}
+        self.noise_train_won = {}
+
     def get_env_info(self):
         return self.env_info
 
     def save_replay(self):
         pass
 
-    def set_learner(self, learner):
-        return
-
     def close_env(self):
         for parent_conn in self.parent_conns:
             parent_conn.send(("close", None))
 
-    def reset(self):
+    def reset(self, test_mode=False):
         self.batch = self.new_batch()
 
         # Reset the envs
@@ -82,11 +98,26 @@ class ParallelRunnerV3:
 
         self.batch.update(pre_transition_data, ts=0)
 
+        # Sample the noise at the beginning of the episode
+        self.noise = self.noise_distrib.sample(self.batch['state'][:,0], test_mode)
+
+        self.batch.update({"noise": self.noise}, ts=0)
+
         self.t = 0
         self.env_steps_this_run = 0
 
-    def run(self, test_mode=False):
-        self.reset()
+        if "map_name" in self.args.env_args and self.args.env_args["map_name"] == "2_corridors":
+            if self.t_env > 5 * 1000 * 1000:
+                for parent_conn in self.parent_conns:
+                    parent_conn.send(("close_corridor", None))
+
+        if "map_name" in self.args.env_args and self.args.env_args["map_name"] == "bunker_vs_6m":
+            if self.t_env > 3 * 1000 * 1000:
+                for parent_conn in self.parent_conns:
+                    parent_conn.send(("avail_bunker", None))
+
+    def run(self, test_mode=False, test_uniform=False):
+        self.reset(test_uniform)
 
         all_terminated = False
         episode_returns = [0 for _ in range(self.batch_size)]
@@ -94,7 +125,7 @@ class ParallelRunnerV3:
         self.mac.init_hidden(batch_size=self.batch_size)
         terminated = [False for _ in range(self.batch_size)]
         envs_not_terminated = [b_idx for b_idx, termed in enumerate(terminated) if not termed]
-        final_env_infos = []  # may store extra stats like battle won. this is filled in ORDER OF TERMINATION
+        final_env_infos = []
 
         while True:
 
@@ -109,6 +140,12 @@ class ParallelRunnerV3:
             }
             self.batch.update(actions_chosen, bs=envs_not_terminated, ts=self.t, mark_filled=False)
 
+            # Update terminated envs after adding post_transition_data
+            envs_not_terminated = [b_idx for b_idx, termed in enumerate(terminated) if not termed]
+            all_terminated = all(terminated)
+            if all_terminated:
+                break
+
             # Send actions to each env
             action_idx = 0
             for idx, parent_conn in enumerate(self.parent_conns):
@@ -116,12 +153,6 @@ class ParallelRunnerV3:
                     if not terminated[idx]: # Only send the actions to the env if it hasn't terminated
                         parent_conn.send(("step", cpu_actions[action_idx]))
                     action_idx += 1 # actions is not a list over every env
-
-            # Update envs_not_terminated
-            envs_not_terminated = [b_idx for b_idx, termed in enumerate(terminated) if not termed]
-            all_terminated = all(terminated)
-            if all_terminated:
-                break
 
             # Post step data we will insert for the current timestep
             post_transition_data = {
@@ -184,6 +215,8 @@ class ParallelRunnerV3:
         cur_stats = self.test_stats if test_mode else self.train_stats
         cur_returns = self.test_returns if test_mode else self.train_returns
         log_prefix = "test_" if test_mode else ""
+        if test_uniform:
+            log_prefix += "uni_"
         infos = [cur_stats] + final_env_infos
         cur_stats.update({k: sum(d.get(k, 0) for d in infos) for k in set.union(*[set(d) for d in infos])})
         cur_stats["n_episodes"] = self.batch_size + cur_stats.get("n_episodes", 0)
@@ -191,10 +224,15 @@ class ParallelRunnerV3:
 
         cur_returns.extend(episode_returns)
 
+        self._update_noise_returns(episode_returns, self.noise, final_env_infos, test_mode)
+        self.noise_distrib.update_returns(self.batch['state'][:,0], self.noise, episode_returns, test_mode, self.t_env)
+
         n_test_runs = max(1, self.args.test_nepisode // self.batch_size) * self.batch_size
         if test_mode and (len(self.test_returns) == n_test_runs):
+            self._log_noise_returns(test_mode, test_uniform)
             self._log(cur_returns, cur_stats, log_prefix)
         elif self.t_env - self.log_train_stats_t >= self.args.runner_log_interval:
+            self._log_noise_returns(test_mode, test_uniform)
             self._log(cur_returns, cur_stats, log_prefix)
             if hasattr(self.mac.action_selector, "epsilon"):
                 self.logger.log_stat("epsilon", self.mac.action_selector.epsilon, self.t_env)
@@ -211,6 +249,62 @@ class ParallelRunnerV3:
             if k != "n_episodes":
                 self.logger.log_stat(prefix + k + "_mean" , v/stats["n_episodes"], self.t_env)
         stats.clear()
+
+    def _update_noise_returns(self, returns, noise, stats, test_mode):
+        for n, r in zip(noise, returns):
+            n = int(np.argmax(n))
+            if n in self.noise_returns:
+                self.noise_returns[n].append(r)
+            else:
+                self.noise_returns[n] = [r]
+        if test_mode:
+            noise_won = self.noise_test_won
+        else:
+            noise_won = self.noise_train_won
+
+        if stats != [] and "battle_won" in stats[0]:
+            for n, info in zip(noise, stats):
+                if "battle_won" not in info:
+                    continue
+                bw = info["battle_won"]
+                n = int(np.argmax(n))
+                if n in noise_won:
+                    noise_won[n].append(bw)
+                else:
+                    noise_won[n] = [bw]
+
+    def _log_noise_returns(self, test_mode, test_uniform):
+        if test_mode:
+            max_noise_return = -100000
+            for n,rs in self.noise_returns.items():
+                n_item = n
+                r_mean = float(np.mean(rs))
+                max_noise_return = max(r_mean, max_noise_return)
+                self.logger.log_stat("{}_noise_test_ret_u_{:1}".format(n_item, test_uniform), r_mean, self.t_env)
+            self.logger.log_stat("max_noise_test_ret_u_{:1}".format(test_uniform), max_noise_return, self.t_env)
+
+        noise_won = self.noise_test_won
+        prefix = "test"
+        if test_uniform:
+            prefix += "_uni"
+        if not test_mode:
+            noise_won = self.noise_train_won
+            prefix = "train"
+        if len(noise_won.keys()) > 0:
+            max_test_won = 0
+            for n, rs in noise_won.items():
+                n_item = n #int(np.argmax(n))
+                r_mean = float(np.mean(rs))
+                max_test_won = max(r_mean, max_test_won)
+                self.logger.log_stat("{}_noise_{}_won".format(n_item, prefix), r_mean, self.t_env)
+            self.logger.log_stat("max_noise_{}_won".format(prefix), max_test_won, self.t_env)
+        self.noise_returns = {}
+        self.noise_test_won = {}
+        self.noise_train_won = {}
+
+    def save_models(self, path):
+        if self.args.noise_bandit:
+            self.noise_distrib.save_model(path)
 
 
 def env_worker(remote, env_fn):
@@ -251,6 +345,10 @@ def env_worker(remote, env_fn):
             remote.send(env.get_env_info())
         elif cmd == "get_stats":
             remote.send(env.get_stats())
+        elif cmd == "close_corridor":
+            env.close_corridor()
+        elif cmd == "avail_bunker":
+            env.open_bunker()
         else:
             raise NotImplementedError
 
@@ -267,3 +365,4 @@ class CloudpickleWrapper():
     def __setstate__(self, ob):
         import pickle
         self.x = pickle.loads(ob)
+

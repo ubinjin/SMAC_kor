@@ -7,31 +7,24 @@ epsilon_finish: 0.05
 epsilon_anneal_time: 50000
 
 runner: "parallel"
-batch_size_run: 44
+batch_size_run: 8
 
 buffer_size: 5000
-# pc mode buffer_size: 500
 
 # update the target network every {} episodes
 target_update_interval: 200
 
 # use the Q_Learner to train
 agent_output_type: "q"
-learner: "noise_q_learner"
+learner: "qtran_learner"
 double_q: True
-mixer: "qmix"
-mixing_embed_dim: 32
-skip_connections: False
-hyper_initialization_nonzeros: 0
+mixer: "qtran_base"
+mixing_embed_dim: 64
+qtran_arch: "qtran_paper"
 
-mac: "noise_mac"
-agent: "noise_rnn"
-noise_dim: 2
+opt_loss: 1
+nopt_min_loss: 0.1
 
-mi_loss: 1
+network_size: small
 
-discrim_size: 32
-discrim_layers: 1
-
-name: "noisemix"
-save_replay: False
+name: "qtran"
