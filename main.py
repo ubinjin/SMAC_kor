@@ -24,13 +24,13 @@ if __name__ == '__main__':
     #IQL
     #algorithm = 'RNN_AGENT/iql_beta'
     #VDN
-    algorithm = 'RNN_AGENT/vdn_beta'
+    #algorithm = 'RNN_AGENT/vdn_beta'
     #COMA
     #algorithm = 'RNN_AGENT/coma'
     #QMIX
     #algorithm = 'RNN_AGENT/qmix_beta'
     #QTRAN
-    #algorithm = 'RNN_AGENT/qtran_beta'
+    algorithm = 'RNN_AGENT/qtran_beta'
     #MAVEN
     #algorithm = 'MAVEN/noisemix_episode'
     #algorithm = 'MAVEN/Adv_MAVEN'
